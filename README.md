@@ -25,6 +25,7 @@ A fun full-featured WiFi surveillance system for the **AI Thinker ESP32-CAM** (H
 15. [Serial Monitor / Debugging](#serial-monitor--debugging)
 16. [Troubleshooting](#troubleshooting)
 17. [Architecture Notes](#architecture-notes)
+18. [Timelapse Overview](#timelapse-overview)
 
 ---
 
