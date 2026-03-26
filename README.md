@@ -1,4 +1,4 @@
-# ESP32-CAM - Hellboy's WatchTower v1.8
+# ESP32-CAM - Hellboy's WatchTower v1.0
 
 ### ESP32-CAM Complete Surveillance Dashboard System
 
