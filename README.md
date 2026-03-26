@@ -75,10 +75,10 @@ Open **Tools** and set every option exactly as shown:
 
 Because credentials are stored in non-volatile storage (NVS) rather than hardcoded, the first boot works like this:
 
-### Step 1 — Flash the firmware
+### Step 1 - Flash the firmware
 Upload `HellboysWatchTower_v1.8.ino` with the board settings above.
 
-### Step 2 — Connect to the AP
+### Step 2 - Connect to the AP
 On first boot (or whenever no saved WiFi is found), the device starts as a **WiFi Access Point**:
 
 | Field | Value |
@@ -356,14 +356,14 @@ Set baud rate to **115200**. Key log prefixes:
 |--------|---------|
 | `[CAM]` | Camera init, mode changes, captures |
 | `[SD]` | SD card mount, file operations |
-| `[MD]` | Motion detection — MAD values, warm-up progress |
+| `[MD]` | Motion detection - MAD values, warm-up progress |
 | `[AVI]` | Video recording start, frame count, finish |
 | `[TG]` | Telegram send/receive |
 | `[WEB]` | Web server ready |
 | `[STREAM]` | Stream server ready |
 | `[RTOS]` | FreeRTOS task creation |
 | `[JOB]` | Pending job execution (photo/record) |
-| `[FATAL]` | Camera failed to init — check wiring |
+| `[FATAL]` | Camera failed to init - check wiring |
 
 ---
 
@@ -371,11 +371,11 @@ Set baud rate to **115200**. Key log prefixes:
 
 **Camera init fails (`[FATAL] Camera failed`)**
 - Check that GPIO0 is NOT grounded (only needed during flashing)
-- Ensure power supply is at least 2 A — the camera draws significant current on init
+- Ensure power supply is at least 2 A - the camera draws significant current on init
 - Reseat the camera ribbon cable
 
 **Blank/white photos**
-- This is an AE/AWB settling issue — the firmware already discards 3 warm-up frames
+- This is an AE/AWB settling issue - the firmware already discards 3 warm-up frames
 - If still occurring, increase the `delay(350)` after `initCameraMode` in `captureAndSavePhoto()`
 
 **SD card not detected**
@@ -386,7 +386,7 @@ Set baud rate to **115200**. Key log prefixes:
 **No Telegram messages received**
 - Double-check Bot Token and Chat ID in Settings
 - Make sure the ESP32 is in STA mode (connected to a router), not AP mode
-- Verify your bot is not blocked — send `/start` to it from your Telegram account
+- Verify your bot is not blocked - send `/start` to it from your Telegram account
 
 **Stream is laggy or disconnecting**
 - Reduce resolution (try QVGA or VGA) or lower FPS
@@ -395,11 +395,11 @@ Set baud rate to **115200**. Key log prefixes:
 
 **Motion detection firing constantly**
 - Lower the sensitivity slider (move it toward 1)
-- Check Serial Monitor — if idle MAD is above 5.0, lighting is too inconsistent (flickering lights, wind moving objects)
+- Check Serial Monitor - if idle MAD is above 5.0, lighting is too inconsistent (flickering lights, wind moving objects)
 - Increase the cooldown period
 
 **Dashboard not loading after settings save**
-- The device reboots after credential changes — wait 10–15 seconds then reconnect to your router and navigate to the new IP address
+- The device reboots after credential changes - wait 10–15 seconds then reconnect to your router and navigate to the new IP address
 
 ---
 
@@ -408,9 +408,9 @@ Set baud rate to **115200**. Key log prefixes:
 The firmware uses a **non-blocking architecture** so the dashboard is always responsive:
 
 - **Telegram FreeRTOS task** runs on Core 0 with a 12 KB stack. All Telegram I/O (text, photo upload, video upload) is queued and executed off the main loop. The main loop on Core 1 never blocks waiting for TLS.
-- **Pending-job state machine** — photo capture and video recording are never executed inside HTTP handlers. The handler sets a flag and returns immediately; `loop()` picks up and executes the job on the next iteration.
+- **Pending-job state machine** - photo capture and video recording are never executed inside HTTP handlers. The handler sets a flag and returns immediately; `loop()` picks up and executes the job on the next iteration.
 - **SD mutex** (`sdMutex`) guards every `SD_MMC` call across both cores to prevent concurrent access corruption.
-- **Camera resolution changes** always use a full `esp_camera_deinit()` + `esp_camera_init()` cycle — the only safe method on this hardware.
+- **Camera resolution changes** always use a full `esp_camera_deinit()` + `esp_camera_init()` cycle - the only safe method on this hardware.
 - **CAMERA_GRAB_LATEST** with 2 PSRAM frame buffers prevents frame-buffer overflow during streaming.
 - **AVI index arrays** (offsets + sizes for up to 3000 frames) are allocated in PSRAM to preserve internal SRAM for WiFi and HTTP buffers.
 - **Dashboard HTML** is gzip-compressed in PROGMEM (31 KB → 8.5 KB, 73% reduction) and served with `Content-Encoding: gzip`.
@@ -437,7 +437,7 @@ The short answer is: **no, this solution does not use NVS Encryption, Flash Encr
 
 This is the most significant issue. The `Preferences` library writes to a standard NVS partition with no encryption. The WiFi password, Telegram bot token, and Chat ID sit in plaintext on the ESP32's flash chip.
 
-Anyone with physical access to the device and a flash programmer — or even just an FTDI cable and `esptool.py` — can dump the entire flash image in a few minutes and extract every credential from the NVS partition without any resistance. For a device that will be mounted somewhere semi-accessible, like a doorframe, a garage, or an outdoor enclosure, this is a real threat.
+Anyone with physical access to the device and a flash programmer - or even just an FTDI cable and `esptool.py` - can dump the entire flash image in a few minutes and extract every credential from the NVS partition without any resistance. For a device that will be mounted somewhere semi-accessible, like a doorframe, a garage, or an outdoor enclosure, this is a real threat.
 
 **NVS Encryption** (available in the ESP-IDF and exposed through Arduino) would protect this by encrypting the NVS partition with a key stored in eFuses. Without it, the partition is an open book.
 
@@ -451,17 +451,17 @@ It is worth noting that Flash Encryption on ESP32 is a one-way operation with li
 
 The HTTP server on port 80 serves the full dashboard - live stream controls, photo capture, recording, motion arming, SD card deletion, and credential configuration - to **any device on the same network** with zero authentication. There is no login, no token, no IP allowlist.
 
-In a home network where the ESP32 and your own devices share the same WiFi, this is mostly fine in practice. But it means any other device on that network - a guest's phone, a compromised smart TV, anything — can access and control the camera in full. The dashboard also allows writing new WiFi credentials and rebooting the device, which are high-impact operations.
+In a home network where the ESP32 and your own devices share the same WiFi, this is mostly fine in practice. But it means any other device on that network - a guest's phone, a compromised smart TV, anything - can access and control the camera in full. The dashboard also allows writing new WiFi credentials and rebooting the device, which are high-impact operations.
 
 #### 4. The dashboard is served over plain HTTP
 
 The web server runs on HTTP, not HTTPS. This means the dashboard traffic, including any credentials you type into the WiFi or Telegram fields and submit, travels in plaintext over the WiFi network. Someone running a packet capture on the same network segment could read those submissions.
 
-Implementing HTTPS on an ESP32 WebServer is non-trivial because it requires generating and storing a certificate, and the TLS handshake is expensive in terms of RAM and time on this hardware — which is why virtually no ESP32-CAM projects do it. That does not make it any less of a genuine exposure.
+Implementing HTTPS on an ESP32 WebServer is non-trivial because it requires generating and storing a certificate, and the TLS handshake is expensive in terms of RAM and time on this hardware - which is why virtually no ESP32-CAM projects do it. That does not make it any less of a genuine exposure.
 
 #### 5. AP mode credentials are hardcoded
 
-The fallback access point uses hardcoded credentials compiled into the binary (`ESP32HBWT` / `watchtower`). Anyone who reads the source code — or who has seen another device running the same firmware — knows the AP password. For the brief window when the device is in AP mode during first setup, the entire dashboard is accessible to anyone within WiFi range who knows those credentials.
+The fallback access point uses hardcoded credentials compiled into the binary (`ESP32HBWT` / `watchtower`). Anyone who reads the source code - or who has seen another device running the same firmware - knows the AP password. For the brief window when the device is in AP mode during first setup, the entire dashboard is accessible to anyone within WiFi range who knows those credentials.
 
 #### 6. No stream authentication
 
@@ -485,7 +485,7 @@ The MJPEG stream on port 81 (`/stream`) requires no authentication. Anyone who k
 
 ### Practical risk assessment
 
-For a **personal home project** on a trusted home network, the risk profile is acceptable for most people. The realistic attacker is someone with physical access to the device, and for that scenario enabling NVS Encryption and Flash Encryption would be the correct remediation. The lack of dashboard authentication is the other meaningful gap, and the simplest mitigation there — without touching the firmware — is network segmentation: putting the ESP32 on an IoT VLAN that your other devices cannot reach.
+For a **personal home project** on a trusted home network, the risk profile is acceptable for most people. The realistic attacker is someone with physical access to the device, and for that scenario enabling NVS Encryption and Flash Encryption would be the correct remediation. The lack of dashboard authentication is the other meaningful gap, and the simplest mitigation there - without touching the firmware - is network segmentation: putting the ESP32 on an IoT VLAN that your other devices cannot reach.
 
 For any deployment where the device is accessible to untrusted parties, or where the network cannot be fully controlled, the absence of Flash Encryption, NVS Encryption, and dashboard authentication would each be considered a meaningful security deficiency.
 
