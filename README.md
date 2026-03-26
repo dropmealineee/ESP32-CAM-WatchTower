@@ -415,8 +415,6 @@ The firmware uses a **non-blocking architecture** so the dashboard is always res
 - **AVI index arrays** (offsets + sizes for up to 3000 frames) are allocated in PSRAM to preserve internal SRAM for WiFi and HTTP buffers.
 - **Dashboard HTML** is gzip-compressed in PROGMEM (31 KB → 8.5 KB, 73% reduction) and served with `Content-Encoding: gzip`.
 
-## Security Assessment: 
-
 ## Security Assessment - Hellboy's WatchTower v1.0
 
 The short answer is: **no, this solution does not use NVS Encryption, Flash Encryption, or any equivalent hardening.** Here is a complete picture of the security posture, both where it is reasonable and where it is genuinely exposed.
@@ -425,9 +423,9 @@ The short answer is: **no, this solution does not use NVS Encryption, Flash Encr
 
 ### What the firmware does well
 
-**Telegram communication is encrypted in transit.** All communication with Telegram's API uses `WiFiClientSecure` with the Telegram root CA certificate pinned via `setCACert(TELEGRAM_CERTIFICATE_ROOT)`. This means the TLS session is authenticated — the ESP32 verifies it is talking to a real Telegram server and not an impersonator. Traffic cannot be read or tampered with by anyone watching the network.
+**Telegram communication is encrypted in transit.** All communication with Telegram's API uses `WiFiClientSecure` with the Telegram root CA certificate pinned via `setCACert(TELEGRAM_CERTIFICATE_ROOT)`. This means the TLS session is authenticated - the ESP32 verifies it is talking to a real Telegram server and not an impersonator. Traffic cannot be read or tampered with by anyone watching the network.
 
-**Telegram commands are chat-ID gated.** The bot handler checks every incoming message against the configured Chat ID and silently ignores anything that does not match. This means a random person who finds your bot token cannot issue commands — they would need both the token and your specific Chat ID.
+**Telegram commands are chat-ID gated.** The bot handler checks every incoming message against the configured Chat ID and silently ignores anything that does not match. This means a random person who finds your bot token cannot issue commands - they would need both the token and your specific Chat ID.
 
 **No hardcoded credentials in the firmware binary by default.** WiFi credentials and the Telegram token are stored in NVS via the `Preferences` library and loaded at boot. They are not compiled into the sketch as string literals that would appear in a strings dump of the binary.
 
@@ -445,15 +443,15 @@ Anyone with physical access to the device and a flash programmer — or even jus
 
 #### 2. Flash Encryption is not enabled
 
-Without Flash Encryption, the entire flash contents — firmware, PROGMEM data, and NVS — can be read off the chip directly. Flash Encryption would make the raw flash contents unreadable without the key burned into the chip's eFuses. Once enabled, `esptool.py` can no longer dump a meaningful image.
+Without Flash Encryption, the entire flash contents - firmware, PROGMEM data, and NVS - can be read off the chip directly. Flash Encryption would make the raw flash contents unreadable without the key burned into the chip's eFuses. Once enabled, `esptool.py` can no longer dump a meaningful image.
 
-It is worth noting that Flash Encryption on ESP32 is a one-way operation with limited re-flash cycles in its production mode, which makes development more complex. That is probably why it was not used here, and it is a reasonable trade-off for a personal home project — but it is the right recommendation for any deployment where physical access cannot be controlled.
+It is worth noting that Flash Encryption on ESP32 is a one-way operation with limited re-flash cycles in its production mode, which makes development more complex. That is probably why it was not used here, and it is a reasonable trade-off for a personal home project - but it is the right recommendation for any deployment where physical access cannot be controlled.
 
 #### 3. The web dashboard has no authentication
 
-The HTTP server on port 80 serves the full dashboard — live stream controls, photo capture, recording, motion arming, SD card deletion, and credential configuration — to **any device on the same network** with zero authentication. There is no login, no token, no IP allowlist.
+The HTTP server on port 80 serves the full dashboard - live stream controls, photo capture, recording, motion arming, SD card deletion, and credential configuration - to **any device on the same network** with zero authentication. There is no login, no token, no IP allowlist.
 
-In a home network where the ESP32 and your own devices share the same WiFi, this is mostly fine in practice. But it means any other device on that network — a guest's phone, a compromised smart TV, anything — can access and control the camera in full. The dashboard also allows writing new WiFi credentials and rebooting the device, which are high-impact operations.
+In a home network where the ESP32 and your own devices share the same WiFi, this is mostly fine in practice. But it means any other device on that network - a guest's phone, a compromised smart TV, anything — can access and control the camera in full. The dashboard also allows writing new WiFi credentials and rebooting the device, which are high-impact operations.
 
 #### 4. The dashboard is served over plain HTTP
 
