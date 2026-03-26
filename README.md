@@ -633,7 +633,7 @@ The frame number shown is `photoCount + 1` at the time of capture, which counts 
 
 ## Security Assessment - Hellboy's WatchTower v1.0
 
-The short answer is: **no, this solution does not use NVS Encryption, Flash Encryption, or any equivalent hardening.** Here is a complete picture of the security posture, both where it is reasonable and where it is genuinely exposed.
+This solution does not use NVS Encryption, Flash Encryption, or any equivalent hardening.** Here is a complete picture of the security posture, both where it is reasonable and where it is genuinely exposed.
 
 ---
 
