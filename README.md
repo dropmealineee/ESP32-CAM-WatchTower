@@ -2,7 +2,7 @@
 
 ### ESP32-CAM Complete Surveillance Dashboard System
 
-A fun full-featured WiFi surveillance system for the **AI Thinker ESP32-CAM** (HW-381 board, OV2640 sensor). Streams live video, captures photos, records AVI video, detects motion, and sends alerts via Telegram, all controlled from a built-in web dashboard or Telegram bot commands.
+A fun full-featured WiFi surveillance system for the **AI Thinker ESP32-CAM** (HW-381 board, OV2640 sensor). Streams live video, captures photos, records AVI video, detects motion, and sends alerts via Telegram, all controlled from a built-in web dashboard or Telegram bot commands. Also added timelapse mode. 
 
 ---
 
@@ -414,6 +414,221 @@ The firmware uses a **non-blocking architecture** so the dashboard is always res
 - **CAMERA_GRAB_LATEST** with 2 PSRAM frame buffers prevents frame-buffer overflow during streaming.
 - **AVI index arrays** (offsets + sizes for up to 3000 frames) are allocated in PSRAM to preserve internal SRAM for WiFi and HTTP buffers.
 - **Dashboard HTML** is gzip-compressed in PROGMEM (31 KB → 8.5 KB, 73% reduction) and served with `Content-Encoding: gzip`.
+
+## Timelapse Overview
+
+The timelapse feature captures a still photo at a regular interval and saves it to the SD card. It is implemented as a polling block inside the main `loop()` on Core 1, using a millisecond timestamp comparison rather than a timer interrupt or RTOS task. Each frame is a full high-resolution still, captured using exactly the same pipeline as a manually triggered photo.
+
+There is no separate timelapse video assembly on the device. The output is a sequence of individually dated JPEG files in `/photos/` on the SD card. Assembling them into a video is done offline on a PC after downloading the files.
+
+---
+
+## State Variables
+
+Three runtime variables govern the timelapse:
+
+|Variable|Type|Default|Purpose|
+|---|---|---|---|
+|`timelapseActive`|`bool`|`false`|Whether timelapse is currently running|
+|`timelapseIntervalS`|`int`|`30`|Seconds between captures|
+|`lastTimelapseMs`|`unsigned long`|`0`|`millis()` timestamp of the last capture|
+
+All three are global variables. `timelapseActive` and `timelapseIntervalS` are persisted to NVS on every change so they survive a reboot.
+
+---
+
+## How It Works - Step by Step
+
+### 1. The polling block in `loop()`
+
+Every iteration of `loop()` - which runs approximately every 10–30 ms depending on whether motion detection is armed - the following block is evaluated:
+
+```
+if (timelapseActive && !aviRecording && pendingJob.type == JOB_NONE) {
+    if (now - lastTimelapseMs >= interval_in_ms) {
+        lastTimelapseMs = now;
+        captureAndSavePhoto(false, "Timelapse", false);
+    }
+}
+```
+
+Three conditions must all be true before a capture is even considered:
+
+- **`timelapseActive`** - timelapse has been enabled from the dashboard or API
+- **`!aviRecording`** - no AVI video recording is currently in progress
+- **`pendingJob.type == JOB_NONE`** - no manually triggered photo or record job is queued
+
+If any condition is false, the entire block is skipped silently and checked again on the next loop iteration.
+
+### 2. Interval timing
+
+The interval is measured using `millis()` arithmetic. When the elapsed time since `lastTimelapseMs` reaches or exceeds the configured interval in milliseconds, a capture fires and `lastTimelapseMs` is updated to `now`. This is a simple elapsed-time check, not a scheduled callback.
+
+One important detail: when timelapse is **enabled**, `lastTimelapseMs` is explicitly set to `0`. Because `millis()` starts counting from boot and will always be greater than zero, setting `lastTimelapseMs = 0` guarantees that the interval check passes immediately on the very next loop iteration. **The first photo is taken straight away**, not after one full interval has elapsed.
+
+### 3. The capture itself
+
+Each timelapse frame is captured by calling:
+
+```
+captureAndSavePhoto(false, "Timelapse", false)
+```
+
+The three arguments are:
+
+|Argument|Value|Meaning|
+|---|---|---|
+|`sendTg`|`false`|Do **not** send this photo to Telegram|
+|`triggerLabel`|`"Timelapse"`|Label embedded in the serial log|
+|`useFlash`|`false`|Do **not** fire the flash LED|
+
+Timelapse photos are intentionally silent - they produce no Telegram notification and no flash. They are designed to run unattended in the background.
+
+### 4. What happens during capture
+
+Even though a timelapse is a background operation, each frame goes through the full high-resolution still pipeline:
+
+1. The live stream is paused and motion detection is temporarily disarmed
+2. The camera is de-initialised and reinitialised at XGA resolution (1024×768) with quality setting 6
+3. Three warm-up frames are captured and discarded to allow the OV2640's auto-exposure and auto-white-balance circuits to settle at the new resolution
+4. One frame is captured
+5. The camera is de-initialised and reinitialised back to the stream resolution and quality
+6. The stream and motion detection are restored to whatever state they were in before the capture
+7. The JPEG is written to `/photos/YYYY-MM-DD_HH-MM-SS.jpg` on the SD card under `sdMutex`
+8. `photoCount` is incremented
+
+This full reinit cycle takes approximately **1.5 to 2 seconds** per frame due to the resolution switch, warm-up delays, and SD write. This is a hardware constraint of the OV2640 on this board - resolution cannot be changed while the DMA engine is running.
+
+**The practical consequence is that intervals shorter than about 3 seconds are not reliable.** The capture takes ~2 seconds, and if the interval fires again before the previous capture has fully returned, the pending job guard (`pendingJob.type == JOB_NONE`) will not actually prevent a direct timelapse call since timelapse does not go through the job queue. In practice the blocking `delay()` calls inside `captureAndSavePhoto()` mean the loop simply cannot re-enter the timelapse block until the current capture finishes, so captures will execute sequentially - but the effective frame rate will be limited by capture duration, not by the configured interval.
+
+### 5. Stream behaviour during capture
+
+Because the camera must be reinitialised at a different resolution for each still, **the live stream drops momentarily for every timelapse frame**. `streamActive` is saved and restored, so the stream resumes automatically after the capture. If a browser is watching the stream, it will see a brief interruption at every capture interval.
+
+---
+
+## Persistence
+
+Every time the timelapse state or interval changes - whether from the dashboard toggle, the interval input field, or the API directly - both values are written to NVS:
+
+|NVS key|Type|Stores|
+|---|---|---|
+|`tlActive`|bool|Whether timelapse was running at last save|
+|`tlInterval`|int|Configured interval in seconds|
+
+These are read back at boot via `preferences.getBool("tlActive", false)` and `preferences.getInt("tlInterval", 30)`. If the device reboots while timelapse is active, it will **resume timelapse automatically** on the next boot because `timelapseActive` is restored to `true`. The `lastTimelapseMs` variable is not persisted - it always initialises to `0` on boot, so the first capture after a reboot fires immediately rather than waiting for the full interval, same as when timelapse is freshly enabled.
+
+---
+
+## API
+
+The timelapse state is controlled via a single GET endpoint:
+
+```
+GET /api/timelapse?active=<0|1>&interval=<seconds>
+```
+
+Both parameters are optional and independent - you can change only the interval without toggling active state, or toggle active state without changing the interval.
+
+|Parameter|Values|Behaviour|
+|---|---|---|
+|`active`|`1`|Enable timelapse, set `lastTimelapseMs = 0` (fires immediately)|
+|`active`|`0`|Disable timelapse|
+|`interval`|`1` – `3600`|Set capture interval in seconds (clamped to this range)|
+
+The response is a JSON object confirming the new state:
+
+json
+
+```json
+{ "active": true, "interval": 30 }
+```
+
+Both values are also saved to NVS on every call, including calls that change only one parameter.
+
+---
+
+## Dashboard Controls
+
+The dashboard exposes two controls in the **Timelapse** card on the Live tab:
+
+**Toggle switch** - Enables or disables timelapse. Calls `/api/timelapse?active=<0|1>&interval=<current>` on change. The status label updates to show `ACTIVE - Ns INTERVAL` in green when running, or `INACTIVE` in grey when stopped.
+
+**Interval field** - A numeric input accepting values from 1 to 3600. Calls the API on change. The value is not validated for the practical minimum capture time (see notes below) - that is left to the user's judgment.
+
+The dashboard polls `/api/status` every 4 seconds, which returns `timelapse` (bool) and `tlInterval` (int), so the timelapse controls stay in sync across multiple browser tabs or if the state was changed via the API directly.
+
+---
+
+## Output Files
+
+Timelapse photos are saved to the same directory as all other photos:
+
+```
+/photos/YYYY-MM-DD_HH-MM-SS.jpg
+```
+
+Filenames are generated from the NTP-synced local time at the moment of capture. If NTP has not synced, the filename is `notime_<millis>.jpg`. Because timelapse frames share the `/photos/` directory with motion detection photos and manually triggered stills, they appear together in the Events tab gallery in chronological order. There is no separate folder or filename prefix that distinguishes a timelapse frame from any other photo.
+
+---
+
+## Interactions with Other Features
+
+|Feature|Interaction|
+|---|---|
+|**Live stream**|Paused for ~2 seconds per frame, then automatically resumed|
+|**Motion detection**|Disarmed during capture, automatically re-armed afterwards. The motion baseline is reset after each timelapse frame.|
+|**Manual photo / flash capture**|Timelapse is skipped for the current loop iteration if a manual job is pending (`pendingJob.type != JOB_NONE`)|
+|**AVI recording**|Timelapse is fully suppressed while `aviRecording` is true. Frames that would have fired during a recording are simply skipped - there is no catch-up mechanism|
+|**Telegram**|Timelapse frames are **never** sent to Telegram, regardless of whether the bot is configured|
+|**LED flash**|Never fired for timelapse frames|
+
+---
+
+## Usage Guide
+
+### Enabling timelapse from the dashboard
+
+1. Open the dashboard at `http://<device-ip>`
+2. In the **Timelapse** card, set the desired interval in seconds
+3. Flip the toggle switch to the on position
+4. The status label changes to `ACTIVE - Ns INTERVAL` and the first photo is captured within the next loop cycle (typically within 30 ms)
+5. Photos accumulate in `/photos/` on the SD card and appear in the Events tab
+
+### Stopping timelapse
+
+Flip the toggle switch off. The current state is saved to NVS immediately.
+
+### Choosing an interval
+
+|Use case|Suggested interval|
+|---|---|
+|Fast-moving subjects (clouds, traffic)|5 – 15 seconds|
+|General outdoor scene (plants, weather)|30 – 60 seconds|
+|Very slow change (construction, seasons)|300 – 3600 seconds|
+|Practical minimum (hardware limited)|3 seconds|
+
+Intervals below 3 seconds are unreliable because each capture takes approximately 1.5–2 seconds to complete due to the camera reinitialisation cycle.
+
+### Downloading and assembling the sequence
+
+1. Open the **Events** tab in the dashboard
+2. Use the individual download links to download photos, or connect an SD card reader to a PC and copy the `/photos/` directory directly
+3. Sort files chronologically by filename (they are already named by timestamp)
+4. Use any timelapse or video editor to assemble the sequence. Common tools include:
+    - **FFmpeg** - `ffmpeg -framerate 24 -pattern_type glob -i '*.jpg' -c:v libx264 timelapse.mp4`
+    - **VirtualDub**, **DaVinci Resolve**, **Adobe Premiere**, or any NLE that accepts image sequences
+
+### Monitoring via serial
+
+While timelapse is active, each capture logs to Serial Monitor at 115200 baud:
+
+```
+[TL] Capturing timelapse frame #47
+[CAM] Saved /photos/2025-06-15_14-32-10.jpg (186432 bytes, flash=0)
+```
+
+The frame number shown is `photoCount + 1` at the time of capture, which counts all photos on the SD card, not just timelapse frames.  
 
 ## Security Assessment - Hellboy's WatchTower v1.0
 
