@@ -79,7 +79,7 @@ Open **Tools** and set every option exactly as shown:
 Because credentials are stored in non-volatile storage (NVS) rather than hardcoded, the first boot works like this:
 
 ### Step 1 - Flash the firmware
-Upload `HellboysWatchTower_v1.8.ino` with the board settings above.
+Upload `v1_0_hbwt_blue.ino` with the board settings above.
 
 ### Step 2 - Connect to the AP
 On first boot (or whenever no saved WiFi is found), the device starts as a **WiFi Access Point**:
